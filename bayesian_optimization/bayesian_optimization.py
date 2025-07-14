@@ -1,3 +1,4 @@
+
 import numpy as np
 from scipy.integrate import solve_ivp
 from skopt import Optimizer
@@ -41,7 +42,7 @@ TAU = 0.120
 KA = 0.0
 
 # --- Cost and Process Constants ---
-# TIME_HOURS = 150  # hours - Now a user input
+# TIME_HOURS = 150 # hours - Now a user input
 VOLUME_L = 500  # L
 AREA_M2 = 1.26  # m^2
 EFFICIENCY = 2e-6  # micromol/J to mol/J
@@ -112,7 +113,7 @@ def calculate_lutein_profit(lutein_concentration):
     return lutein_mg_per_L * VOLUME_L * PRICE_LUTEIN_PER_MG
 
 def calculate_total_cost_and_profit(params, lutein_concentration, time_hours):
-    """Calculate total cost, profit, and revenue (J)"""
+    """Calculate total cost, profit, and Revenue_J (Net Gain)"""
     C_x0, C_N0, F_in, C_N_in, I0 = params
     
     biomass_cost = calculate_biomass_cost(C_x0)
@@ -122,7 +123,8 @@ def calculate_total_cost_and_profit(params, lutein_concentration, time_hours):
     
     lutein_profit = calculate_lutein_profit(lutein_concentration)
     
-    J = total_cost - lutein_profit
+    # J is now (Lutein Profit - Total Cost)
+    J = lutein_profit - total_cost
     
     return {
         'biomass_cost': biomass_cost,
@@ -130,7 +132,7 @@ def calculate_total_cost_and_profit(params, lutein_concentration, time_hours):
         'energy_cost': energy_cost,
         'total_cost': total_cost,
         'lutein_profit': lutein_profit,
-        'revenue_J': J
+        'revenue_J': J # Keep the name as 'revenue_J'
     }
 
 # --- New Yield Calculation Function ---
@@ -158,13 +160,14 @@ def _evaluate_lutein_model_objective(*args):
         return 1e6
     
     if optimization_mode == "concentration":
-        return -final_lutein
+        return -final_lutein # Minimize negative lutein to maximize lutein
     elif optimization_mode == "cost":
         cost_analysis = calculate_total_cost_and_profit(args, final_lutein, TIME_HOURS)
-        return cost_analysis['revenue_J']
+        # Minimize negative Revenue_J to maximize Revenue_J (gain)
+        return -cost_analysis['revenue_J']
     else: # optimization_mode == "yield"
         lutein_yield = calculate_lutein_yield(final_biomass, final_lutein)
-        return -lutein_yield
+        return -lutein_yield # Minimize negative yield to maximize yield
 
 # --- 5. Bokeh Application Setup ---
 doc = curdoc()
@@ -175,7 +178,7 @@ convergence_source = ColumnDataSource(data=dict(iter=[], best_value=[]))
 simulation_source = ColumnDataSource(data=dict(time=[], C_X=[], C_N=[], C_L=[], C_L_scaled=[]))
 experiments_source = ColumnDataSource(data=dict(
     C_x0=[], C_N0=[], F_in=[], C_N_in=[], I0=[], 
-    Lutein=[], Total_Cost=[], Lutein_Profit=[], Revenue_J=[],
+    Lutein=[], Total_Cost=[], Lutein_Profit=[], Revenue_J=[], # Keep Revenue_J
     Lutein_Yield=[], Biomass_Cost=[], Nitrogen_Cost=[], Energy_Cost=[]
 ))
 
@@ -198,8 +201,8 @@ def set_optimization_mode():
         for col in yield_columns: col.visible = False
         time_hours_input.visible = False
     elif optimization_mode == "cost":
-        p_conv.title.text = "Optimizer Convergence - Revenue Optimization"
-        p_conv.yaxis.axis_label = "Best Revenue (Profit - Cost) [$]"
+        p_conv.title.text = "Optimizer Convergence - Revenue Optimization" # Keep "Revenue Optimization"
+        p_conv.yaxis.axis_label = "Best Revenue J [$]" # Keep "Revenue J"
         for col in cost_columns: col.visible = True
         for col in yield_columns: col.visible = False
         time_hours_input.visible = True
@@ -325,7 +328,7 @@ def generate_initial_points():
                 'Lutein': [np.nan] * n_initial,
                 'Total_Cost': [np.nan] * n_initial,
                 'Lutein_Profit': [np.nan] * n_initial,
-                'Revenue_J': [np.nan] * n_initial,
+                'Revenue_J': [np.nan] * n_initial, # Keep Revenue_J
                 'Lutein_Yield': [np.nan] * n_initial,
                 'Biomass_Cost': [np.nan] * n_initial,
                 'Nitrogen_Cost': [np.nan] * n_initial,
@@ -384,7 +387,7 @@ def calculate_lutein_for_table():
                     'lutein': lutein_conc,
                     'total_cost': cost_analysis['total_cost'],
                     'lutein_profit': cost_analysis['lutein_profit'],
-                    'revenue_j': cost_analysis['revenue_J'],
+                    'revenue_J': cost_analysis['revenue_J'], # Keep Revenue_J
                     'lutein_yield': lutein_yield,
                     'biomass_cost': cost_analysis['biomass_cost'],
                     'nitrogen_cost': cost_analysis['nitrogen_cost'],
@@ -400,7 +403,7 @@ def calculate_lutein_for_table():
                     current_data['Lutein'][res_idx] = results[i]['lutein']
                     current_data['Total_Cost'][res_idx] = results[i]['total_cost']
                     current_data['Lutein_Profit'][res_idx] = results[i]['lutein_profit']
-                    current_data['Revenue_J'][res_idx] = results[i]['revenue_j']
+                    current_data['Revenue_J'][res_idx] = results[i]['revenue_J'] # Keep Revenue_J
                     current_data['Lutein_Yield'][res_idx] = results[i]['lutein_yield']
                     current_data['Biomass_Cost'][res_idx] = results[i]['biomass_cost']
                     current_data['Nitrogen_Cost'][res_idx] = results[i]['nitrogen_cost']
@@ -458,9 +461,12 @@ def suggest_next_experiment():
                 uncertainty = std[0]
                 metric_text = f"<b>Predicted Lutein: {predicted_lutein:.4f} ± {uncertainty:.4f} g/L</b>"
             elif optimization_mode == "cost":
-                predicted_revenue = mean[0]
+                predicted_revenue = -mean[0] # Convert from minimized objective to actual Revenue_J
                 uncertainty = std[0]
-                metric_text = f"<b>Predicted Revenue (J): ${predicted_revenue:.4f} ± {uncertainty:.4f}</b>"
+                if predicted_revenue >= 0:
+                    metric_text = f"<b>Predicted Revenue J: ${predicted_revenue:.4f} ± {uncertainty:.4f} (Gain)</b>"
+                else:
+                    metric_text = f"<b>Predicted Revenue J: ${predicted_revenue:.4f} ± {uncertainty:.4f} (Loss)</b>"
             else: # optimization_mode == "yield"
                 predicted_yield = -mean[0]
                 uncertainty = std[0]
@@ -519,7 +525,7 @@ def run_suggestion():
                     'Lutein': [lutein_val],
                     'Total_Cost': [cost_analysis['total_cost']],
                     'Lutein_Profit': [cost_analysis['lutein_profit']],
-                    'Revenue_J': [cost_analysis['revenue_J']],
+                    'Revenue_J': [cost_analysis['revenue_J']], # Keep Revenue_J
                     'Lutein_Yield': [lutein_yield_val],
                     'Biomass_Cost': [cost_analysis['biomass_cost']],
                     'Nitrogen_Cost': [cost_analysis['nitrogen_cost']],
@@ -531,7 +537,8 @@ def run_suggestion():
                 if optimization_mode == "concentration":
                     update_status(f"✅ Ran suggested experiment as Step {opt_step_number}. Lutein: {lutein_val:.4f} g/L")
                 elif optimization_mode == "cost":
-                    update_status(f"✅ Ran suggested experiment as Step {opt_step_number}. Revenue: ${cost_analysis['revenue_J']:.4f}")
+                    gain_loss_str = "Gain" if cost_analysis['revenue_J'] >= 0 else "Loss"
+                    update_status(f"✅ Ran suggested experiment as Step {opt_step_number}. Revenue J: ${cost_analysis['revenue_J']:.4f} ({gain_loss_str})") # Use Revenue_J directly
                 else: # optimization_mode == "yield"
                     update_status(f"✅ Ran suggested experiment as Step {opt_step_number}. Lutein Yield: {lutein_yield_val:.4f} %")
                 
@@ -553,7 +560,10 @@ def process_and_plot_latest_results():
         results_div.text = ""
         return
     
-    best_item = min(optimization_history, key=lambda item: item[1])
+    # When picking the best_item from optimization_history for cost optimization,
+    # the 'y_value' (item[1]) is the *negative* of the actual Revenue_J.
+    # So, we want the minimum negative value, which corresponds to the maximum positive Revenue_J.
+    best_item = min(optimization_history, key=lambda item: item[1]) 
     best_params, best_obj_val = best_item[0], best_item[1]
     
     global C_x0_model, C_N0_model, F_in_model, C_N_in_model, I0_model, TIME_HOURS
@@ -574,7 +584,8 @@ def process_and_plot_latest_results():
     if optimization_mode == "concentration":
         results_html += f"<b>Maximum Lutein Found:</b> {max_lutein:.4f} g/L<br/>"
     elif optimization_mode == "cost":
-        results_html += f"<b>Best Revenue (J):</b> ${cost_analysis['revenue_J']:.4f}<br/>"
+        gain_loss_label = "Revenue J (Gain)" if cost_analysis['revenue_J'] >= 0 else "Revenue J (Loss)"
+        results_html += f"<b>Best {gain_loss_label}:</b> ${cost_analysis['revenue_J']:.4f}<br/>" # Use Revenue_J directly
         results_html += f"<b>Lutein Concentration:</b> {max_lutein:.4f} g/L<br/>"
         results_html += f"<b>Total Cost:</b> ${cost_analysis['total_cost']:.4f}<br/>"
         results_html += f"<b>Biomass Cost:</b> ${cost_analysis['biomass_cost']:.4f}<br/>"
@@ -626,18 +637,24 @@ def update_convergence_plot_from_history():
     if initial_points_history:
         if optimization_mode == "concentration" or optimization_mode == "yield":
             current_best_initial = -min(p[1] for p in initial_points_history) 
-        else: # cost optimization
-            current_best_initial = min(p[1] for p in initial_points_history)
+        else: # cost optimization (maximize Revenue_J, so minimize -Revenue_J)
+            current_best_initial = -min(p[1] for p in initial_points_history) # Convert objective value back to actual Revenue_J
 
-    current_best = current_best_initial if current_best_initial is not None else (-np.inf if optimization_mode in ["concentration", "yield"] else np.inf)
+    # Initialize current_best based on the type of optimization
+    if optimization_mode in ["concentration", "yield"]:
+        current_best = current_best_initial if current_best_initial is not None else -np.inf # Maximize (so start with -inf)
+    else: # cost optimization (maximize Revenue_J)
+        current_best = current_best_initial if current_best_initial is not None else -np.inf # Maximize (so start with -inf)
 
     for _, y_val in opt_history:
         if optimization_mode == "concentration" or optimization_mode == "yield":
-            value = -y_val
-            if value > current_best: current_best = value
-        else: # cost optimization
-            value = y_val
-            if value < current_best: current_best = value
+            value = -y_val # Convert back to actual concentration/yield
+            if value > current_best: 
+                current_best = value
+        else: # cost optimization (maximize Revenue_J)
+            value = -y_val # Convert back to actual Revenue_J
+            if value > current_best: # We want to maximize the Revenue_J
+                current_best = value
         best_values_so_far.append(current_best)
         
     convergence_source.data = {'iter': iters, 'best_value': best_values_so_far}
@@ -677,13 +694,13 @@ def update_time_hours(attr, old, new):
 
 # --- UI Widgets ---
 title_div = Div(text="<h1>Lutein Production Bayesian Optimizer with Cost Analysis</h1>")
-description_p = Paragraph(text="""This application uses Bayesian Optimization to find optimal operating conditions for a photobioreactor. You can optimize for maximum lutein concentration, minimum cost, or maximum yield. Follow the steps to run a virtual experiment.""", width=450)
+description_p = Paragraph(text="""This application uses Bayesian Optimization to find optimal operating conditions for a photobioreactor. You can optimize for maximum lutein concentration, minimize cost, or maximize yield. Follow the steps to run a virtual experiment.""", width=450)
 
 objective_title = Div(text="<h4>0. Select Optimization Objective</h4>")
 objective_select = Select(title="Optimization Objective:", value="concentration", 
-                          options=[("concentration", "Maximize Lutein Concentration"), 
-                                   ("cost", "Minimize Cost (Maximize Revenue)"),
-                                   ("yield", "Maximize Lutein Yield")])
+                              options=[("concentration", "Maximize Lutein Concentration"), 
+                                       ("cost", "Maximize Revenue J"), # Changed from "Minimize Cost" to "Maximize Revenue J"
+                                       ("yield", "Maximize Lutein Yield")])
 objective_select.on_change('value', lambda attr, old, new: set_optimization_mode())
 
 # New Spinner for TIME_HOURS
@@ -774,7 +791,7 @@ columns = [
     TableColumn(field="Lutein", title="Lutein (g/L)", formatter=NumberFormatter(format="0.0000")),
     TableColumn(field="Total_Cost", title="Total Cost ($)", formatter=NumberFormatter(format="0.0000")),
     TableColumn(field="Lutein_Profit", title="Lutein Profit ($)", formatter=NumberFormatter(format="0.0000")),
-    TableColumn(field="Revenue_J", title="Revenue J ($)", formatter=NumberFormatter(format="0.0000")),
+    TableColumn(field="Revenue_J", title="Revenue J ($)", formatter=NumberFormatter(format="0.0000")), # Keep Revenue_J title
     TableColumn(field="Lutein_Yield", title="Lutein Yield (%)", formatter=NumberFormatter(format="0.0000")),
     TableColumn(field="Biomass_Cost", title="Biomass Cost ($)", formatter=NumberFormatter(format="0.0000")),
     TableColumn(field="Nitrogen_Cost", title="Nitrogen Cost ($)", formatter=NumberFormatter(format="0.0000")),
@@ -847,3 +864,6 @@ doc.add_root(layout)
 # Initialize UI
 set_optimization_mode()
 set_ui_state()
+
+# Gemini provided guidance on debugging specific functions and adapting logic
+# (Last consulted on: July 14, 2025)
